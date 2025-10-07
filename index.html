@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Pong – Relaxed Edition</title>
+<style>
+  :root{
+    --neon-bg1:#0f0c29; --neon-bg2:#302b63; --neon-accent:#00ffff; --neon-accent-2:#ff00ff;
+    --retro-bg1:#2b1f12; --retro-bg2:#3b2b1e; --retro-accent:#ffd27a; --retro-accent-2:#c76b00;
+    --font: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    
+    /* New variables for enhanced design */
+    --particle-color: rgba(255,255,255,0.7);
+    --glow-intensity: 0.8;
+    --transition-speed: 0.3s;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    height:100%; display:flex; align-items:center; justify-content:center;
+    font-family:var(--font); background:linear-gradient(135deg,var(--neon-bg1),var(--neon-bg2));
+    color:#fff; overflow:hidden; transition: background var(--transition-speed);
+  }
+  .outer{width:100%;max-width:1200px;padding:20px;display:flex;flex-direction:column;align-items:center;gap:14px}
+  h1{font-size:2rem;letter-spacing:2px;text-transform:uppercase;text-shadow:0 0 8px var(--neon-accent); transition: all var(--transition-speed);}
+  .top-row{width:100%;display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .score-panel{display:flex;gap:12px;align-items:center}
+  .score-box{background:rgba(0,0,0,0.35);padding:8px 14px;border-radius:10px;min-width:120px;text-align:center;box-shadow:0 0 12px rgba(0,255,255,0.08); transition: all var(--transition-speed);}
+  #canvas-wrap{width:100%;aspect-ratio:2/1;background:transparent;border-radius:12px;position:relative;display:flex;align-items:center;justify-content:center; overflow:hidden;}
+  canvas{width:100%;height:100%;display:block;border-radius:10px;box-shadow:0 0 40px rgba(0,255,255,0.08); transition: all var(--transition-speed);}
+  .controls{display:flex;gap:10px;align-items:center}
+  button, select, input { background:transparent;color:var(--neon-accent);border:2px solid var(--neon-accent);padding:8px 12px;border-radius:8px;cursor:pointer;font-weight:600; transition: all 0.2s; }
+  button:hover, select:hover { background:rgba(0,255,255,0.1); transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,255,255,0.2); }
+  button:disabled{opacity:.5;cursor:not-allowed; transform: none; box-shadow: none;}
+  .overlay{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0.65),rgba(0,0,0,0.6));display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;border-radius:10px; z-index:10;}
+  .hidden{display:none}
+  .muted{opacity:.8;font-size:.92rem}
+  label{font-size:0.95rem;margin-right:6px}
+  .settings-row{display:flex;gap:8px;align-items:center}
+  .footer{font-size:0.85rem;opacity:.8;margin-top:8px}
+  
+  /* Retro theme overrides */
+  .retro body{background:linear-gradient(135deg,var(--retro-bg1),var(--retro-bg2));}
+  .retro h1{color:var(--retro-accent);text-shadow:0 0 6px rgba(255,210,122,0.2)}
+  .theme-toggle{display:flex;gap:8px}
+  
+  /* New enhanced elements */
+  .powerup-indicator { display: flex; gap: 8px; align-items: center; margin-left: 20px; }
+  .powerup-icon { width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; }
+  .powerup-big { background: #ff00ff; }
+  .powerup-fast { background: #ffff00; }
+  .powerup-slow { background: #00ff00; }
+  
+  .rally-counter { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.5); padding: 4px 12px; border-radius: 20px; font-size: 0.9rem; }
+  
+  .particle { position: absolute; pointer-events: none; border-radius: 50%; }
+  
+  /* Animation for shaking effect */
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+    20%, 40%, 60%, 80% { transform: translateX(5px); }
+  }
+  .shaking { animation: shake 0.5s; }
+  
+  /* small screens */
+  @media (max-width:600px){ 
+    h1{font-size:1.4rem} 
+    .score-box{min-width:80px;padding:6px 8px} 
+    button,select,input{padding:6px 8px} 
+    .settings-row { flex-wrap: wrap; justify-content: center; }
+  }
+</style>
+</head>
+<body>
+<div class="outer" id="outer">
+  <div class="top-row">
+    <h1 id="title">Pong – Relaxed Edition</h1>
+    <div class="score-panel">
+      <div class="score-box">Player <strong id="player-score">0</strong></div>
+      <div class="score-box">AI <strong id="ai-score">0</strong></div>
+      <div class="powerup-indicator">
+        <div class="powerup-icon powerup-big hidden" id="powerup-big">B</div>
+        <div class="powerup-icon powerup-fast hidden" id="powerup-fast">F</div>
+        <div class="powerup-icon powerup-slow hidden" id="powerup-slow">S</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="canvas-wrap">
+    <canvas id="pong"></canvas>
+    
+    <div id="rally-counter" class="rally-counter hidden">Rally: <span id="rally-count">0</span></div>
+
+    <div id="start-overlay" class="overlay">
+      <div style="text-align:center">
+        <h2 style="margin-bottom:6px">Welcome to Relaxed Pong</h2>
+        <div class="muted">Easy gameplay with weaker AI. Perfect for casual play.</div>
+      </div>
+
+      <div class="settings-row">
+        <label>Difficulty:</label>
+        <select id="difficulty">
+          <option value="very-easy" selected>Very Easy</option>
+          <option value="easy">Easy</option>
+          <option value="medium">Medium</option>
+        </select>
+
+        <label>Winning score:</label>
+        <select id="win-score">
+          <option value="3">3</option>
+          <option value="5" selected>5</option>
+          <option value="7">7</option>
+        </select>
+
+        <label>Theme:</label>
+        <select id="theme-select">
+          <option value="neon" selected>Neon</option>
+          <option value="retro">Retro</option>
+        </select>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button id="play-btn">Play</button>
+        <button id="help-btn">How to play</button>
+      </div>
+
+      <div class="muted">Controls: Arrow keys or drag with mouse / touch to move paddle.</div>
+    </div>
+
+    <div id="gameover-overlay" class="overlay hidden">
+      <h2 id="winner-text">Player Wins!</h2>
+      <div id="final-stats" style="margin-bottom: 10px; text-align: center;"></div>
+      <div style="display:flex;gap:10px">
+        <button id="play-again">Play Again</button>
+        <button id="back-to-menu">Menu</button>
+      </div>
+    </div>
+
+  </div>
+
+  <div style="display:flex;justify-content:space-between;width:100%;align-items:center;margin-top:8px">
+    <div class="controls">
+      <button id="pause-btn" disabled>Pause</button>
+      <button id="reset-btn">Reset</button>
+    </div>
+    <div class="muted">Tip: The AI is intentionally weak for a more relaxing experience.</div>
+  </div>
+
+  <div class="footer muted">Relaxed gameplay: Weaker AI, larger player paddle, and helpful power-ups.</div>
+</div>
+
+<script>
+/* ---------- Responsive canvas & utilities ---------- */
+const canvas = document.getElementById('pong');
+const outer = document.getElementById('outer');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas(){
+  const wrap = document.getElementById('canvas-wrap');
+  const rect = wrap.getBoundingClientRect();
+  canvas.width = Math.floor(rect.width * devicePixelRatio);
+  canvas.height = Math.floor(rect.height * devicePixelRatio);
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = rect.height + 'px';
+  ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+/* ---------- DOM references ---------- */
+const playerScoreEl = document.getElementById('player-score');
+const aiScoreEl = document.getElementById('ai-score');
+const startOverlay = document.getElementById('start-overlay');
+const gameoverOverlay = document.getElementById('gameover-overlay');
+const winnerText = document.getElementById('winner-text');
+const finalStats = document.getElementById('final-stats');
+const playBtn = document.getElementById('play-btn');
+const helpBtn = document.getElementById('help-btn');
+const playAgainBtn = document.getElementById('play-again');
+const backToMenuBtn = document.getElementById('back-to-menu');
+const pauseBtn = document.getElementById('pause-btn');
+const resetBtn = document.getElementById('reset-btn');
+const difficultySelect = document.getElementById('difficulty');
+const themeSelect = document.getElementById('theme-select');
+const winScoreSelect = document.getElementById('win-score');
+const title = document.getElementById('title');
+const rallyCounter = document.getElementById('rally-counter');
+const rallyCountEl = document.getElementById('rally-count');
+const powerupBig = document.getElementById('powerup-big');
+const powerupFast = document.getElementById('powerup-fast');
+const powerupSlow = document.getElementById('powerup-slow');
+
+/* ---------- Audio helper (enhanced with multiple sounds) ---------- */
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function beep(freq=440, time=0.06, vol=0.08, type='sine', detune=0){
+  if (audioCtx.state === 'suspended') return;
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = type; o.frequency.value = freq; o.detune.value = detune;
+  g.gain.value = vol;
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(); o.stop(audioCtx.currentTime + time);
+}
+
+/* ---------- Particle system ---------- */
+let particles = [];
+function createParticles(x, y, count, color, size=2) {
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      x: x,
+      y: y,
+      vx: (Math.random() - 0.5) * 4,
+      vy: (Math.random() - 0.5) * 4,
+      life: 1,
+      decay: 0.02 + Math.random() * 0.02,
+      color: color,
+      size: size + Math.random() * size
+    });
+  }
+}
+
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life -= p.decay;
+    
+    if (p.life <= 0) {
+      particles.splice(i, 1);
+    }
+  }
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    const sx = p.x * (canvas.width / devicePixelRatio) / WIDTH;
+    const sy = p.y * (canvas.height / devicePixelRatio) / HEIGHT;
+    
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(sx, sy, p.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+/* ---------- Game constants & state ---------- */
+let WIDTH = 1000, HEIGHT = 500; // logical coordinates (we scale drawing to canvas size)
+function logicalToScreen(x){ return x * (canvas.width / devicePixelRatio) / WIDTH; }
+function screenToLogicalX(x){ return x * WIDTH / (canvas.width / devicePixelRatio); }
+function screenToLogicalY(y){ return y * HEIGHT / (canvas.height / devicePixelRatio); }
+
+// Make player paddle larger and AI paddle smaller for easier gameplay
+const BASE_PADDLE_H = 140, BASE_AI_H = 80, PADDLE_W = 12, BALL_R = 8;
+let WINNING_SCORE = parseInt(winScoreSelect.value, 10) || 5;
+
+/* Enhanced Entities */
+function Paddle(x,y,h){
+  this.x = x; this.y = y; this.w = PADDLE_W; this.h = h;
+  this.baseSpeed = 8; this.speed = this.baseSpeed; this.vy = 0; this.score = 0;
+  this.maxSpeed = 16;
+  this.powerupActive = { big: false, fast: false, slow: false };
+}
+function Ball(x,y,vx,vy){
+  this.x = x; this.y = y; this.r = BALL_R;
+  this.vx = vx; this.vy = vy;
+  this.baseSpeed = Math.hypot(vx,vy) || 5; // Slower base speed
+  this.speed = Math.hypot(vx,vy) || 5;
+  // normalize to speed
+  normalizeVelocity(this, this.speed);
+  this.color = '#00ffff';
+  this.trail = []; // for trail effect
+  this.maxTrailLength = 8;
+}
+
+/* Globals */
+let player, ai, balls = [], powerups = [], lastHitBy = null;
+let keys = {}, dragging = false, gameRunning=false, gamePaused=false, countdown=0;
+let powerTimer=null, powerEffectTimer=null, tickId=null, aiReactionTimer=null;
+let rally = 0, maxRally = 0, totalHits = 0;
+
+/* theme */
+let theme = 'neon';
+function applyTheme(t){
+  theme = t;
+  if (t === 'retro'){
+    document.body.style.background = `linear-gradient(135deg,var(--retro-bg1),var(--retro-bg2))`;
+    title.style.textShadow = '0 0 6px rgba(255,210,122,0.4)';
+    title.style.color = 'var(--retro-accent)';
+  } else {
+    document.body.style.background = `linear-gradient(135deg,var(--neon-bg1),var(--neon-bg2))`;
+    title.style.textShadow = '0 0 10px var(--neon-accent)';
+    title.style.color = '#fff';
+  }
+}
+
+/* ---------- Utils ---------- */
+function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+function normalizeVelocity(ball, newSpeed){
+  const len = Math.hypot(ball.vx, ball.vy) || 1;
+  ball.vx = ball.vx/len * newSpeed;
+  ball.vy = ball.vy/len * newSpeed;
+  ball.speed = Math.hypot(ball.vx, ball.vy);
+}
+
+/* ---------- Drawing ---------- */
+function clear(){
+  // painted background per theme
+  if (theme === 'retro'){
+    // wood styled table look
+    ctx.fillStyle = '#2b1f12';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    // subtle center line
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 2; ctx.setLineDash([10,10]);
+    ctx.beginPath(); ctx.moveTo(canvas.width/2, 10); ctx.lineTo(canvas.width/2, canvas.height-10); ctx.stroke();
+    ctx.setLineDash([]);
+  } else {
+    const g = ctx.createLinearGradient(0,0,canvas.width,canvas.height);
+    g.addColorStop(0, 'rgba(15,12,41,0.85)'); g.addColorStop(1,'rgba(36,36,62,0.85)');
+    ctx.fillStyle = g; ctx.fillRect(0,0,canvas.width,canvas.height);
+    // neon center net
+    ctx.strokeStyle = 'rgba(0,255,255,0.12)';
+    ctx.lineWidth = 4; ctx.setLineDash([8,12]);
+    ctx.beginPath(); ctx.moveTo(canvas.width/2,6); ctx.lineTo(canvas.width/2, canvas.height-6); ctx.stroke(); ctx.setLineDash([]);
+  }
+}
+
+function drawPaddle(p){
+  const sx = p.x * (canvas.width / devicePixelRatio) / WIDTH;
+  const sy = p.y * (canvas.height / devicePixelRatio) / HEIGHT;
+  const sw = p.w * (canvas.width / devicePixelRatio) / WIDTH;
+  const sh = p.h * (canvas.height / devicePixelRatio) / HEIGHT;
+  
+  // Add glow effect for active powerups
+  if (p.powerupActive.big || p.powerupActive.fast || p.powerupActive.slow) {
+    ctx.shadowColor = p.powerupActive.big ? '#ff00ff' : 
+                     p.powerupActive.fast ? '#ffff00' : '#00ff00';
+    ctx.shadowBlur = 20;
+  }
+  
+  if (theme === 'retro'){
+    // wood gradient
+    const grad = ctx.createLinearGradient(sx,sy,sx+sw,sy+sh);
+    grad.addColorStop(0,'#6b3f18'); grad.addColorStop(1,'#4b2b12');
+    ctx.fillStyle = grad; ctx.fillRect(sx, sy, sw, sh);
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 2; ctx.strokeRect(sx,sy,sw,sh);
+  } else {
+    // neon
+    const grad = ctx.createLinearGradient(sx,sy,sx+sw,sy+sh);
+    grad.addColorStop(0,'#00ffff'); grad.addColorStop(1,'#0080ff');
+    ctx.fillStyle = grad; 
+    ctx.shadowColor = '#00ffff'; 
+    ctx.shadowBlur = p.powerupActive.big || p.powerupActive.fast || p.powerupActive.slow ? 20 : 18;
+    ctx.fillRect(sx, sy, sw, sh); 
+  }
+  ctx.shadowBlur = 0;
+}
+
+function drawBall(b){
+  const sx = b.x * (canvas.width / devicePixelRatio) / WIDTH;
+  const sy = b.y * (canvas.height / devicePixelRatio) / HEIGHT;
+  const sr = b.r * (canvas.width / devicePixelRatio) / WIDTH;
+  
+  // Draw trail
+  if (b.trail.length > 1) {
+    ctx.strokeStyle = theme === 'retro' ? 'rgba(255,210,122,0.3)' : 'rgba(0,255,255,0.3)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(b.trail[0].x * (canvas.width / devicePixelRatio) / WIDTH, 
+               b.trail[0].y * (canvas.height / devicePixelRatio) / HEIGHT);
+    for (let i = 1; i < b.trail.length; i++) {
+      ctx.lineTo(b.trail[i].x * (canvas.width / devicePixelRatio) / WIDTH, 
+                 b.trail[i].y * (canvas.height / devicePixelRatio) / HEIGHT);
+    }
+    ctx.stroke();
+  }
+  
+  if (theme === 'retro'){
+    ctx.fillStyle = '#ffd27a'; ctx.beginPath(); ctx.arc(sx, sy, sr, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#c76b00'; ctx.lineWidth = 2; ctx.stroke();
+  } else {
+    const rad = ctx.createRadialGradient(sx - sr/3, sy - sr/3, 1, sx, sy, sr);
+    rad.addColorStop(0,'#fff'); rad.addColorStop(1,'#00ffff');
+    ctx.fillStyle = rad; ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 20;
+    ctx.beginPath(); ctx.arc(sx, sy, sr, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0;
+  }
+}
+
+/* ---------- Enhanced Physics & Pong mechanics ---------- */
+/* Map hit position on paddle to bounce angle (enhanced Pong):
+   relativeIntersectY in [-1..1] -> bounceAngle in [-maxAngle..maxAngle]
+   spin: addition to vy based on paddle.vy (player imparting spin)
+   speed: increases with rally count and paddle movement
+*/
+const MAX_BOUNCE_ANGLE = Math.PI * 0.45; // slightly less than 90 deg
+function handlePaddleCollision(ball, paddle){
+  // relative intersection
+  const relativeY = (ball.y - (paddle.y + paddle.h/2)) / (paddle.h/2);
+  const clipped = clamp(relativeY, -1, 1);
+  const bounceAngle = clipped * MAX_BOUNCE_ANGLE;
+  const direction = (ball.vx < 0) ? 1 : -1; // ball was moving left -> player paddle -> bounce right
+  
+  // Reduced speed calculation for easier gameplay
+  const speedInc = clamp(1 + rally * 0.03, 1, 2.0); // Reduced from 0.06 to 0.03
+  const newSpeed = clamp(ball.baseSpeed * speedInc, 4, 20); // Reduced max speed from 28 to 20
+  
+  // Reduced spin for more predictable gameplay
+  const spin = clamp(paddle.vy * 0.25, -2.5, 2.5); // Reduced from 0.35 to 0.25
+  ball.vx = direction * Math.cos(bounceAngle) * newSpeed;
+  ball.vy = Math.sin(bounceAngle) * newSpeed + spin;
+  normalizeVelocity(ball, newSpeed);
+  
+  // nudge ball out of paddle to avoid repeating collision
+  if (direction > 0) ball.x = paddle.x + paddle.w + ball.r + 0.5;
+  else ball.x = paddle.x - ball.r - 0.5;
+  
+  lastHitBy = paddle === player ? 'player' : 'ai';
+  totalHits++;
+  
+  // Enhanced sound based on hit position
+  const pitch = 440 + (clipped * 100);
+  beep(pitch, 0.06, 0.08, 'sine');
+  
+  // Create particles on hit
+  const particleColor = theme === 'retro' ? 'rgba(255,210,122,0.7)' : 'rgba(0,255,255,0.7)';
+  createParticles(ball.x, ball.y, 8, particleColor, 3);
+}
+
+/* ---------- Weakened AI: simplified tracking with errors ---------- */
+/* Simple prediction with intentional inaccuracy */
+function predictCrossY(ball, xTarget){
+  if (Math.abs(ball.vx) < 0.01) return {y: ball.y, t: Infinity};
+  const dt = (xTarget - ball.x) / ball.vx;
+  if (dt < 0) return {y: ball.y, t: Infinity};
+  
+  // Simplified prediction - AI doesn't account for bounces perfectly
+  const simpleY = ball.y + (ball.vy * dt * 0.3); // Only predicts 30% of actual path
+  const clampedY = clamp(simpleY, 0, HEIGHT);
+  
+  return { y: clampedY, t: dt };
+}
+
+/* choose ball that will reach AI soonest */
+function chooseThreatBall(){
+  let best = null, bestT = Infinity;
+  for (const b of balls){
+    if (b.vx <= 0) continue; // only balls moving toward AI
+    const p = predictCrossY(b, ai.x);
+    if (p.t < bestT){ bestT = p.t; best = {ball: b, y: p.y, t: p.t}; }
+  }
+  if (!best && balls.length){ // fallback pick any
+    const b = balls[0], p = predictCrossY(b, ai.x);
+    best = {ball: b, y: p.y, t: p.t};
+  }
+  return best;
+}
+
+/* ---------- Movement per tick ---------- */
+function movePaddles(){
+  // player via keys
+  const lastY = player.y;
+  if (keys['ArrowUp'] || keys['w']) player.y -= player.speed;
+  if (keys['ArrowDown'] || keys['s']) player.y += player.speed;
+  player.vy = player.y - lastY;
+  player.y = clamp(player.y, 0, HEIGHT - player.h);
+
+  // AI uses much weaker tracking - only moves when ball is close
+  const threat = chooseThreatBall();
+  if (threat && threat.ball.vx > 0){ // Only track balls moving toward AI
+    const ballDist = threat.ball.x - ai.x;
+    const center = ai.y + ai.h/2;
+    
+    // AI reaction settings - MUCH weaker
+    let reactionFactor = 0.03, error = 80, reactionDistance = WIDTH * 0.4;
+    const d = difficultySelect.value;
+    if (d === 'very-easy'){ 
+      reactionFactor = 0.015; 
+      error = 120; 
+      reactionDistance = WIDTH * 0.25; // Only reacts when ball is very close
+    } else if (d === 'easy'){ 
+      reactionFactor = 0.025; 
+      error = 100; 
+      reactionDistance = WIDTH * 0.35;
+    } else { 
+      reactionFactor = 0.035; 
+      error = 80; 
+      reactionDistance = WIDTH * 0.4;
+    }
+
+    // AI only starts moving when ball enters reaction zone
+    if (ballDist < reactionDistance){
+      // Add random chance to not react at all
+      if (Math.random() > 0.85){ // 15% chance AI doesn't react this frame
+        return;
+      }
+      
+      const predictedY = threat.y;
+      const aimOffset = (Math.random() * 2 - 1) * error;
+      const target = clamp(predictedY + aimOffset, ai.h/2, HEIGHT - ai.h/2);
+      
+      // Much slower movement
+      const diff = target - center;
+      const step = Math.sign(diff) * Math.min(Math.abs(diff) * reactionFactor, ai.speed * 0.5);
+      ai.y += step;
+      ai.y = clamp(ai.y, 0, HEIGHT - ai.h);
+    }
+  }
+}
+
+/* ---------- Enhanced ball movement with trail ---------- */
+function moveBall(ball, index){
+  // Update trail
+  ball.trail.unshift({x: ball.x, y: ball.y});
+  if (ball.trail.length > ball.maxTrailLength) {
+    ball.trail.pop();
+  }
+  
+  ball.x += ball.vx;
+  ball.y += ball.vy;
+
+  // top/bottom bounce with enhanced effects
+  if (ball.y - ball.r < 0){
+    ball.y = ball.r; ball.vy *= -1; normalizeVelocity(ball, ball.speed);
+    beep(300,0.04,0.05,'square');
+    createParticles(ball.x, ball.y, 5, 'rgba(255,255,255,0.7)', 2);
+  } else if (ball.y + ball.r > HEIGHT){
+    ball.y = HEIGHT - ball.r; ball.vy *= -1; normalizeVelocity(ball, ball.speed);
+    beep(300,0.04,0.05,'square');
+    createParticles(ball.x, ball.y, 5, 'rgba(255,255,255,0.7)', 2);
+  }
+
+  // paddle collisions
+  const targetPaddle = ball.vx < 0 ? player : ai;
+  if (ball.x + ball.r > targetPaddle.x && ball.x - ball.r < targetPaddle.x + targetPaddle.w &&
+      ball.y + ball.r > targetPaddle.y && ball.y - ball.r < targetPaddle.y + targetPaddle.h){
+    handlePaddleCollision(ball, targetPaddle);
+    rally++;
+    maxRally = Math.max(maxRally, rally);
+    
+    // Show rally counter after 3 hits
+    if (rally >= 3) {
+      rallyCounter.classList.remove('hidden');
+      rallyCountEl.textContent = rally;
+    }
+  }
+
+  // scoring
+  if (ball.x - ball.r < 0){
+    // AI scores
+    ai.score++; aiScoreEl.textContent = ai.score;
+    beep(240,0.14,0.14,'triangle'); triggerShake();
+    resetAfterScore('ai');
+    return;
+  } else if (ball.x + ball.r > WIDTH){
+    // Player scores
+    player.score++; playerScoreEl.textContent = player.score;
+    beep(880,0.14,0.14,'triangle'); triggerShake();
+    resetAfterScore('player');
+    return;
+  }
+}
+
+/* ---------- Reset after score ---------- */
+function resetAfterScore(winner){
+  // Hide rally counter
+  rallyCounter.classList.add('hidden');
+  
+  // check win
+  if (player.score >= WINNING_SCORE || ai.score >= WINNING_SCORE){
+    endGame(player.score > ai.score ? 'Player Wins!' : 'AI Wins!');
+    return;
+  }
+  // clear balls, small countdown
+  balls = [];
+  rally = 0;
+  countdown = 3;
+  if (tickId) { /* continue looping but show countdown */ }
+  // spawn after countdown
+  if (powerTimer) { clearTimeout(powerTimer); powerTimer = null; }
+  if (powerEffectTimer){ clearTimeout(powerEffectTimer); powerEffectTimer = null; }
+  const dir = (winner === 'player') ? -1 : 1; // send new ball toward loser side so winner serves away
+  let ticks = 0;
+  const countdownInterval = setInterval(() => {
+    ticks++;
+    if (ticks >= 3){
+      clearInterval(countdownInterval);
+      const vy = (Math.random() - 0.5) * 4;
+      const vx = dir * (5 + Math.random() * 1.5); // Slower initial ball speed
+      balls.push(new Ball(WIDTH/2, HEIGHT/2, vx, vy));
+      countdown = 0;
+    } else {
+      countdown = 3 - ticks;
+    }
+  }, 600);
+}
+
+/* ---------- Enhanced powerups ---------- */
+function spawnPowerup(){
+  if (powerTimer) clearTimeout(powerTimer);
+  const t = 6000 + Math.random() * 7000; // More frequent powerups
+  powerTimer = setTimeout(()=>{
+    if (powerups.length === 0 && gameRunning && !gamePaused){
+      const types = ['bigPaddle','fastBall','slowAi'];
+      const type = types[Math.floor(Math.random()*types.length)];
+      const x = WIDTH*0.25 + Math.random() * WIDTH*0.5;
+      const y = HEIGHT*0.2 + Math.random() * HEIGHT*0.6;
+      powerups.push({x,y,type,r:10});
+    }
+    spawnPowerup();
+  }, t);
+}
+
+function activatePowerup(p){
+  // Power-ups ONLY help the player, never the AI
+  const target = player;
+  const opponent = ai;
+  
+  // Clear any existing powerup effects
+  resetPowerupEffects();
+  
+  if (p.type === 'bigPaddle'){ 
+    target.h = clamp(target.h*1.8, 40, HEIGHT); // Even bigger boost for player
+    target.powerupActive.big = true;
+    powerupBig.classList.remove('hidden');
+  }
+  if (p.type === 'fastBall'){ 
+    // Actually, let's make this give player faster paddle instead
+    target.speed = target.baseSpeed * 1.5;
+    target.powerupActive.fast = true;
+    powerupFast.classList.remove('hidden');
+  }
+  if (p.type === 'slowAi'){ 
+    opponent.speed = Math.max(1, opponent.baseSpeed * 0.3); // AI becomes very slow
+    target.powerupActive.slow = true;
+    powerupSlow.classList.remove('hidden');
+  }
+  
+  // timer to reset
+  if (powerEffectTimer) clearTimeout(powerEffectTimer);
+  powerEffectTimer = setTimeout(()=>{ 
+    resetPowerupEffects();
+  }, 10000); // Even longer powerup duration
+}
+
+function resetPowerupEffects() {
+  player.h = BASE_PADDLE_H; 
+  ai.h = BASE_AI_H; 
+  ai.speed = ai.baseSpeed;
+  player.speed = player.baseSpeed;
+  
+  player.powerupActive = { big: false, fast: false, slow: false };
+  ai.powerupActive = { big: false, fast: false, slow: false };
+  
+  powerupBig.classList.add('hidden');
+  powerupFast.classList.add('hidden');
+  powerupSlow.classList.add('hidden');
+}
+
+/* ---------- Helpers: shake and stuck-ball fix ---------- */
+function triggerShake(){ 
+  const el = document.getElementById('canvas-wrap'); 
+  el.classList.add('shaking'); 
+  setTimeout(()=>el.classList.remove('shaking'),250); 
+}
+
+/* ---------- Input handling: mouse/touch/keys ---------- */
+canvas.addEventListener('mousedown', (e)=>{ dragging = true; movePlayerPointer(e); });
+window.addEventListener('mouseup', ()=>{ dragging = false; });
+canvas.addEventListener('mousemove', (e)=>{ if (dragging) movePlayerPointer(e); });
+canvas.addEventListener('touchstart', (e)=>{ dragging = true; movePlayerPointer(e.touches[0]); e.preventDefault(); }, {passive:false});
+canvas.addEventListener('touchmove', (e)=>{ if (dragging) movePlayerPointer(e.touches[0]); e.preventDefault(); }, {passive:false});
+window.addEventListener('touchend', ()=>{ dragging = false; });
+
+function movePlayerPointer(ev){
+  const rect = canvas.getBoundingClientRect();
+  const cy = ev.clientY - rect.top;
+  const logicalY = screenToLogicalY(cy);
+  player.y = clamp(logicalY - player.h/2, 0, HEIGHT - player.h);
+}
+
+/* keyboard */
+document.addEventListener('keydown', e=>{ keys[e.key]=true; });
+document.addEventListener('keyup', e=>{ keys[e.key]=false; });
+
+/* ---------- Enhanced Game loop ---------- */
+function updateLogic(){
+  if (!gameRunning || gamePaused) return;
+  // AI + player
+  movePaddles();
+  // balls
+  for (let i=0; i<balls.length; i++){
+    moveBall(balls[i], i);
+  }
+  // powerups
+  for (let i=powerups.length-1; i>=0; i--){
+    const p = powerups[i];
+    for (const b of balls){
+      const dx = b.x - p.x, dy = b.y - p.y;
+      if (Math.hypot(dx,dy) < b.r + p.r){
+        activatePowerup(p);
+        powerups.splice(i,1);
+        beep(660,0.2,0.1,'sine');
+        break;
+      }
+    }
+  }
+  // particles
+  updateParticles();
+}
+
+function draw(){
+  clear();
+  // draw powerups
+  for (const p of powerups){
+    const sx = p.x * (canvas.width / devicePixelRatio) / WIDTH;
+    const sy = p.y * (canvas.height / devicePixelRatio) / HEIGHT;
+    const sr = p.r * (canvas.width / devicePixelRatio) / WIDTH;
+    ctx.fillStyle = p.type === 'bigPaddle' ? '#ff00ff' : p.type === 'fastBall' ? '#ffff00' : '#00ff00';
+    ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 15;
+    ctx.beginPath(); ctx.arc(sx, sy, sr, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.fillStyle = '#000'; ctx.font = '12px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(p.type === 'bigPaddle' ? 'B' : p.type === 'fastBall' ? 'F' : 'S', sx, sy);
+  }
+  // draw particles
+  drawParticles();
+  // draw paddles
+  drawPaddle(player); drawPaddle(ai);
+  // draw balls
+  for (const b of balls) drawBall(b);
+  // draw countdown
+  if (countdown > 0){
+    ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 80px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(countdown, canvas.width/2, canvas.height/2);
+  }
+}
+
+function tick(){
+  updateLogic();
+  draw();
+  if (gameRunning && !gamePaused) tickId = requestAnimationFrame(tick);
+}
+
+/* ---------- Game flow ---------- */
+function startGame(){
+  gameRunning = true; gamePaused = false;
+  startOverlay.classList.add('hidden');
+  pauseBtn.disabled = false;
+  // reset scores
+  player = new Paddle(30, HEIGHT/2 - BASE_PADDLE_H/2, BASE_PADDLE_H);
+  ai = new Paddle(WIDTH - 30 - PADDLE_W, HEIGHT/2 - BASE_AI_H/2, BASE_AI_H);
+  
+  // Set initial speeds based on difficulty
+  const d = difficultySelect.value;
+  if (d === 'very-easy'){ 
+    player.baseSpeed = 12; player.speed = player.baseSpeed;
+    ai.baseSpeed = 2; ai.speed = ai.baseSpeed; ai.maxSpeed = 2.5;
+  } else if (d === 'easy'){ 
+    player.baseSpeed = 11; player.speed = player.baseSpeed;
+    ai.baseSpeed = 2.5; ai.speed = ai.baseSpeed; ai.maxSpeed = 3;
+  } else { 
+    player.baseSpeed = 10; player.speed = player.baseSpeed;
+    ai.baseSpeed = 3; ai.speed = ai.baseSpeed; ai.maxSpeed = 4;
+  }
+  
+  player.score = 0; ai.score = 0; playerScoreEl.textContent = '0'; aiScoreEl.textContent = '0';
+  balls = []; powerups = []; particles = [];
+  rally = 0; maxRally = 0; totalHits = 0;
+  WINNING_SCORE = parseInt(winScoreSelect.value, 10) || 5;
+  
+  // spawn first ball after countdown
+  countdown = 3;
+  let ticks = 0;
+  const countdownInterval = setInterval(() => {
+    ticks++;
+    if (ticks >= 3){
+      clearInterval(countdownInterval);
+      const vy = (Math.random() - 0.5) * 4;
+      const vx = (Math.random() > 0.5 ? 1 : -1) * (5 + Math.random() * 1.5); // Slower initial ball
+      balls.push(new Ball(WIDTH/2, HEIGHT/2, vx, vy));
+      countdown = 0;
+    } else {
+      countdown = 3 - ticks;
+    }
+  }, 600);
+  
+  // start powerup spawner
+  spawnPowerup();
+  // start game loop
+  if (tickId) cancelAnimationFrame(tickId);
+  tick();
+}
+
+function endGame(winner){
+  gameRunning = false;
+  gameoverOverlay.classList.remove('hidden');
+  winnerText.textContent = winner;
+  
+  // Enhanced final stats
+  finalStats.innerHTML = `
+    <div>Final Score: ${player.score} - ${ai.score}</div>
+    <div>Longest Rally: ${maxRally}</div>
+    <div>Total Hits: ${totalHits}</div>
+  `;
+  
+  pauseBtn.disabled = true;
+  if (powerTimer) clearTimeout(powerTimer);
+  if (powerEffectTimer) clearTimeout(powerEffectTimer);
+}
+
+function resetGame(){
+  if (gameRunning) endGame('Game Reset');
+  startGame();
+}
+
+/* ---------- Event listeners ---------- */
+playBtn.addEventListener('click', startGame);
+helpBtn.addEventListener('click', ()=>{
+  alert(`Relaxed Pong – How to Play:
+  
+- Use Arrow Keys or drag with mouse/touch to move your paddle
+- Hit the ball past the AI to score
+- First to ${WINNING_SCORE} points wins
+  
+Features for Easier Gameplay:
+- Larger player paddle (easier to hit the ball)
+- Weaker AI with slower reaction times
+- Slower ball speed overall
+- More frequent and powerful power-ups
+- Reduced ball spin for more predictable bounces
+  
+Perfect for casual play and beginners!`);
+});
+playAgainBtn.addEventListener('click', ()=>{
+  gameoverOverlay.classList.add('hidden');
+  startGame();
+});
+backToMenuBtn.addEventListener('click', ()=>{
+  gameoverOverlay.classList.add('hidden');
+  startOverlay.classList.remove('hidden');
+  gameRunning = false;
+  pauseBtn.disabled = true;
+});
+pauseBtn.addEventListener('click', ()=>{
+  if (!gameRunning) return;
+  gamePaused = !gamePaused;
+  pauseBtn.textContent = gamePaused ? 'Resume' : 'Pause';
+  if (!gamePaused && gameRunning) tick();
+});
+resetBtn.addEventListener('click', resetGame);
+difficultySelect.addEventListener('change', ()=>{
+  if (!gameRunning) return;
+  resetGame();
+});
+themeSelect.addEventListener('change', ()=>{
+  applyTheme(themeSelect.value);
+});
+winScoreSelect.addEventListener('change', ()=>{
+  WINNING_SCORE = parseInt(winScoreSelect.value, 10) || 5;
+});
+
+/* ---------- Initialize ---------- */
+applyTheme('neon');
+resizeCanvas();
+</script>
+</body>
+</html>
